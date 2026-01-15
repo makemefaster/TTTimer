@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TT Timer V4 (Auto-Stop)</title>
+    <title>TT Timer V5 (Fixed Undo)</title>
     <style>
         :root {
             --orange: #ff9800; 
@@ -59,9 +59,8 @@
             text-align: center;
         }
         
-        /* Visual cue when clock stops */
         .clock-stopped {
-            color: #ff5252; /* Red text when stopped */
+            color: #ff5252;
             border-color: #ff5252;
         }
 
@@ -194,7 +193,7 @@
         /* EDIT OVERLAY */
         .edit-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.95);
             display: none;
             flex-direction: column;
             justify-content: center;
@@ -301,7 +300,6 @@
         btn.style.display = 'block';
         btn.innerText = `▶ Start Auto (${intervalSeconds}s)`;
         
-        // Reset Clock Display
         const clock = document.getElementById('master-clock');
         clock.innerText = "00:00";
         clock.classList.remove('clock-stopped');
@@ -313,8 +311,11 @@
     let pressTimer;
     function cardDown(id) { pressTimer = setTimeout(() => showEditMenu(id), 600); }
     function cardUp(id) { clearTimeout(pressTimer); }
+    
     function cardClick(id) {
+        // Safe check: if edit menu is visible, do not process click
         if (document.getElementById(`edit-${id}`).style.display === 'flex') return;
+        
         const rider = riders.find(r => r.id === id);
         if (!rider) return;
 
@@ -344,6 +345,47 @@
         renderRiders();
     }
 
+    // --- UNDO LOGIC (FIXED) ---
+    function undo(id) {
+        const rider = riders.find(x => x.id === id);
+        
+        if (rider.status === 'finished') {
+            // Revert finish to racing
+            rider.status = 'racing';
+            rider.lapsRemaining = 1;
+            rider.splits.pop(); // remove final split
+            recalcLastLapStart(rider); // Reset timer anchor
+        } 
+        else if (rider.status === 'racing') {
+            if (rider.splits.length > 0) {
+                // Revert a lap
+                rider.splits.pop();
+                rider.lapsRemaining++;
+                recalcLastLapStart(rider); // Reset timer anchor
+            } else {
+                // Revert start
+                rider.status = 'waiting';
+                rider.startTime = null;
+                rider.lastLapStart = null;
+                rider.lapsRemaining = totalLaps;
+            }
+        }
+        
+        hideEditMenu(id);
+        renderRiders();
+    }
+
+    function recalcLastLapStart(rider) {
+        // Logic: The "start" of the current lap is the Rider Start Time + sum of all previous splits
+        const totalPreviousTime = rider.splits.reduce((a, b) => a + b, 0);
+        rider.lastLapStart = rider.startTime + totalPreviousTime;
+    }
+
+    function showEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'flex'; }
+    function hideEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'none'; }
+
+    // --- AUTO & UI ---
+
     function startAutoSchedule() {
         autoIntervalActive = true;
         document.getElementById('btn-start-auto').style.display = 'none';
@@ -372,16 +414,13 @@
     function updateUI() {
         const now = Date.now();
 
-        // --- MASTER CLOCK LOGIC (With Stop) ---
+        // Master Clock
         const clockEl = document.getElementById('master-clock');
         if (raceStartTime) {
             const allFinished = riders.length > 0 && riders.every(r => r.status === 'finished');
-            
             if (allFinished) {
-                // Find the timestamp when the LAST rider finished
                 let maxFinishTimestamp = 0;
                 riders.forEach(r => {
-                    // Start Time + Sum of all splits = Finish Timestamp
                     const finishTime = r.startTime + r.splits.reduce((a,b)=>a+b, 0);
                     if(finishTime > maxFinishTimestamp) maxFinishTimestamp = finishTime;
                 });
@@ -393,7 +432,7 @@
             }
         }
 
-        // --- AUTO START ---
+        // Auto Start
         if (autoIntervalActive) {
             if (nextAutoStartTime && now >= nextAutoStartTime) {
                 const next = getNextWaitingRider();
@@ -410,7 +449,7 @@
             }
         }
 
-        // --- INDIVIDUAL TIMERS ---
+        // Timers
         riders.forEach(r => {
             const el = document.getElementById(`timer-${r.id}`);
             if (!el) return;
@@ -419,10 +458,12 @@
             } else if (r.status === 'finished') {
                 const total = r.splits.reduce((a,b)=>a+b, 0);
                 el.innerText = formatMinSec(total);
+            } else {
+                el.innerText = "00:00";
             }
         });
 
-        // --- SORT ---
+        // Sorting
         riders.sort((a, b) => {
             if (a.status === 'racing' && b.status === 'racing') return a.lastLapStart - b.lastLapStart; 
             const s = { 'racing': 1, 'waiting': 2, 'finished': 3 };
@@ -438,6 +479,7 @@
     }
 
     function formatMinSec(ms) {
+        if (ms < 0) ms = 0; // Prevent negative display on undo flicker
         const totalSec = Math.floor(ms / 1000);
         const m = Math.floor(totalSec / 60);
         const s = totalSec % 60;
@@ -469,26 +511,12 @@
                 </div>
                 <div id="edit-${r.id}" class="edit-overlay" onclick="event.stopPropagation()">
                     <h3>#${r.number}</h3>
-                    <button style="background:var(--orange); color:black" onclick="undo(${r.id})">↩ Undo Last</button>
-                    <button style="background:#ccc" onclick="hideEditMenu(${r.id})">Cancel</button>
+                    <button style="background:var(--orange); color:black" onclick="event.stopPropagation(); undo(${r.id})">↩ Undo Last</button>
+                    <button style="background:#ccc" onclick="event.stopPropagation(); hideEditMenu(${r.id})">Cancel</button>
                 </div>
             `;
             list.appendChild(div);
         });
-    }
-
-    function showEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'flex'; }
-    function hideEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'none'; }
-    
-    function undo(id) {
-        const r = riders.find(x => x.id === id);
-        if (r.status === 'finished') {
-            r.status = 'racing'; r.lapsRemaining = 1; r.splits.pop();
-        } else if (r.status === 'racing') {
-            if (r.splits.length > 0) { r.splits.pop(); r.lapsRemaining++; }
-            else { r.status = 'waiting'; r.startTime = null; }
-        }
-        hideEditMenu(id); renderRiders();
     }
 
     function exportData() {
