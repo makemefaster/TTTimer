@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TT Timer V6 (Standardized)</title>
+    <title>TT Timer V7 (Global Undo)</title>
     <style>
         :root {
             --orange: #ff9800; 
@@ -24,7 +24,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden; /* Main body doesn't scroll, only the list does */
+            overflow: hidden;
         }
 
         /* HEADER */
@@ -36,7 +36,7 @@
             gap: 10px;
             border-bottom: 1px solid #333;
             z-index: 100;
-            flex-shrink: 0; /* Header stays fixed size */
+            flex-shrink: 0;
         }
 
         .header-top {
@@ -59,10 +59,12 @@
         }
         .clock-stopped { color: #ff5252; border-color: #ff5252; }
 
+        /* CONTROLS ROW */
         .controls {
             display: flex;
             gap: 8px;
             overflow-x: auto;
+            align-items: center;
         }
 
         button {
@@ -79,8 +81,23 @@
         .btn-export { background: #ce93d8; color: #000; }
         .btn-start-auto { background: var(--green); color: white; }
         .btn-stop-auto { background: var(--red); color: white; display: none; }
+        
+        /* UNDO BUTTON */
+        .btn-undo {
+            background-color: #ff9800;
+            color: black;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-undo:disabled {
+            background-color: #444;
+            color: #888;
+            cursor: not-allowed;
+        }
 
-        /* NEXT RIDER BAR */
+        /* INTERVAL BAR */
         #interval-bar {
             background: #000;
             color: var(--orange);
@@ -93,10 +110,10 @@
             flex-shrink: 0;
         }
 
-        /* RIDER LIST - SCROLLABLE AREA */
+        /* SCROLLABLE LIST */
         #rider-list {
-            flex: 1; /* Takes remaining height */
-            overflow-y: auto; /* SCROLLS */
+            flex: 1; 
+            overflow-y: auto; 
             -webkit-overflow-scrolling: touch;
             padding: 10px;
             display: flex;
@@ -105,19 +122,20 @@
             padding-bottom: 60px;
         }
 
-        /* CARD DESIGN (FIXED HEIGHT) */
+        /* CARD DESIGN */
         .rider-card {
             display: grid;
-            grid-template-columns: 80px 1fr 70px; /* Number | Name/Time | Laps */
-            height: 110px; /* FIXED HEIGHT - NO SQUASHING */
+            grid-template-columns: 80px 1fr 70px;
+            height: 110px;
             min-height: 110px; 
-            flex-shrink: 0; /* Prevents flexbox from squishing it */
+            flex-shrink: 0;
             border-radius: 8px;
             color: var(--card-text);
             position: relative;
             overflow: hidden;
             box-shadow: 0 2px 5px rgba(0,0,0,0.5);
             transition: transform 0.1s;
+            cursor: pointer;
         }
         .rider-card:active { transform: scale(0.98); }
 
@@ -125,7 +143,6 @@
         .state-racing { background-color: var(--green); }
         .state-finished { background-color: var(--red); color: white; }
 
-        /* 1. Left: Number */
         .card-number {
             font-size: 2.8rem;
             font-weight: 900;
@@ -136,417 +153,7 @@
             border-right: 1px solid rgba(0,0,0,0.1);
         }
 
-        /* 2. Middle: Name & Timer */
         .card-info {
             display: flex;
             flex-direction: column;
-            justify-content: center; /* Center vertically */
-            padding: 0 15px;
-            overflow: hidden;
-        }
-        
-        .card-name {
-            font-size: 1.6rem; /* LARGER NAME */
-            font-weight: 700;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-bottom: 2px;
-            line-height: 1.2;
-        }
-
-        .card-timer {
-            font-family: monospace;
-            font-size: 1.2rem; /* SMALLER TIMER */
-            font-weight: 600;
-            opacity: 0.9;
-        }
-
-        /* 3. Right: Laps */
-        .card-laps {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0,0,0,0.05);
-            border-left: 1px solid rgba(0,0,0,0.1);
-        }
-        .lap-label { font-size: 0.65rem; text-transform: uppercase; font-weight: bold; opacity: 0.7; }
-        .lap-val { font-size: 2.2rem; font-weight: bold; line-height: 1; }
-
-        /* EDIT / UNDO OVERLAY */
-        .edit-overlay {
-            position: absolute; 
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; /* SOLID BACKGROUND for visibility */
-            display: none;
-            flex-direction: row; /* Buttons side by side */
-            justify-content: space-evenly;
-            align-items: center;
-            z-index: 999; /* High Z-Index */
-            padding: 10px;
-        }
-        
-        .edit-btn {
-            padding: 15px 20px;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 1rem;
-            color: white;
-            border: 1px solid #444;
-            flex: 1;
-            margin: 0 5px;
-            text-align: center;
-        }
-        .btn-undo-action { background: var(--orange); color: black; }
-        .btn-cancel-action { background: #333; }
-
-        /* MODAL */
-        .modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-        .modal-content {
-            background: white; color: black; padding: 20px;
-            border-radius: 10px; width: 90%; max-width: 400px;
-        }
-        textarea, input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; font-size: 1rem; }
-        .row { display: flex; gap: 10px; }
-        .row button { flex: 1; }
-
-    </style>
-</head>
-<body>
-
-<header>
-    <div class="header-top">
-        <div style="font-weight:bold; font-size: 1.3rem;">CycleTT</div>
-        <div id="master-clock" class="master-clock">00:00</div>
-    </div>
-    <div class="controls">
-        <button class="btn-setup" onclick="openSetup()">⚙️ Setup</button>
-        <button id="btn-start-auto" class="btn-start-auto" onclick="startAutoSchedule()" style="display:none">▶ Start Auto</button>
-        <button id="btn-stop-auto" class="btn-stop-auto" onclick="stopAutoSchedule()">⏹ Stop Auto</button>
-        <button class="btn-export" onclick="exportData()">📋 Copy Results</button>
-    </div>
-</header>
-
-<div id="interval-bar">
-    Next: <span id="next-rider-name">...</span> <span id="next-countdown" style="margin-left:10px; color:#fff">00:00</span>
-</div>
-
-<div id="rider-list">
-    <div style="text-align:center; padding-top: 50px; color: #666;">
-        <h3>Ready to Race</h3>
-        <p>Tap "Setup" to add riders.</p>
-    </div>
-</div>
-
-<div id="setup-modal" class="modal">
-    <div class="modal-content">
-        <h2>Race Setup</h2>
-        <label>Riders (Paste: Number Name)</label>
-        <textarea id="input-riders" rows="6" placeholder="101 John Doe&#10;102 Jane Smith"></textarea>
-        
-        <label>Total Laps</label>
-        <input type="number" id="input-laps" value="3">
-
-        <label>Start Interval (Seconds)</label>
-        <input type="number" id="input-interval" value="30">
-
-        <div class="row">
-            <button onclick="closeSetup()" style="background:#ccc">Cancel</button>
-            <button onclick="saveSetup()" style="background:var(--green); color:white">Create Race</button>
-        </div>
-    </div>
-</div>
-
-<script>
-    // --- STATE ---
-    let riders = [];
-    let totalLaps = 3;
-    let intervalSeconds = 30;
-    
-    let raceStartTime = null; 
-    let autoIntervalActive = false;
-    let nextAutoStartTime = null; 
-    let uiTimerId = null;
-
-    function openSetup() { document.getElementById('setup-modal').style.display = 'flex'; }
-    function closeSetup() { document.getElementById('setup-modal').style.display = 'none'; }
-
-    function saveSetup() {
-        const text = document.getElementById('input-riders').value;
-        if (!text.trim()) return;
-
-        totalLaps = parseInt(document.getElementById('input-laps').value);
-        intervalSeconds = parseInt(document.getElementById('input-interval').value);
-        
-        riders = [];
-        raceStartTime = null;
-        autoIntervalActive = false;
-        
-        const lines = text.split('\n');
-        lines.forEach((line, index) => {
-            if (line.trim()) {
-                const parts = line.trim().split(/\s+(.*)/);
-                riders.push({
-                    id: Date.now() + index,
-                    number: parts[0] || (index + 1),
-                    name: parts[1] || `Rider ${parts[0]}`,
-                    status: 'waiting',
-                    lapsRemaining: totalLaps,
-                    startTime: null,
-                    splits: [],
-                    lastLapStart: null,
-                    originalIndex: index
-                });
-            }
-        });
-
-        renderRiders();
-        closeSetup();
-        
-        const btn = document.getElementById('btn-start-auto');
-        btn.style.display = 'block';
-        btn.innerText = `▶ Start Auto (${intervalSeconds}s)`;
-        
-        const clock = document.getElementById('master-clock');
-        clock.innerText = "00:00";
-        clock.classList.remove('clock-stopped');
-
-        if(uiTimerId) clearInterval(uiTimerId);
-        uiTimerId = setInterval(updateUI, 100);
-    }
-
-    // --- INTERACTION ---
-    let pressTimer;
-    function cardDown(id) { pressTimer = setTimeout(() => showEditMenu(id), 600); }
-    function cardUp(id) { clearTimeout(pressTimer); }
-    
-    function cardClick(id) {
-        // Guard: If edit menu is visible, ignore click
-        if (document.getElementById(`edit-${id}`).style.display === 'flex') return;
-        
-        const rider = riders.find(r => r.id === id);
-        if (!rider) return;
-
-        if (rider.status === 'waiting') startRider(rider);
-        else if (rider.status === 'racing') recordSplit(rider);
-    }
-
-    // --- CORE LOGIC ---
-    function startRider(rider) {
-        const now = Date.now();
-        if (!raceStartTime) raceStartTime = now; 
-        rider.status = 'racing';
-        rider.startTime = now;
-        rider.lastLapStart = now;
-
-        if (autoIntervalActive) {
-            nextAutoStartTime = now + (intervalSeconds * 1000);
-        }
-        renderRiders();
-    }
-
-    function recordSplit(rider) {
-        const now = Date.now();
-        rider.splits.push(now - rider.lastLapStart);
-        rider.lapsRemaining--;
-        rider.lastLapStart = now;
-        if (rider.lapsRemaining <= 0) rider.status = 'finished';
-        renderRiders();
-    }
-
-    function undo(id) {
-        const rider = riders.find(x => x.id === id);
-        
-        if (rider.status === 'finished') {
-            rider.status = 'racing';
-            rider.lapsRemaining = 1;
-            rider.splits.pop();
-            recalcLastLapStart(rider);
-        } 
-        else if (rider.status === 'racing') {
-            if (rider.splits.length > 0) {
-                rider.splits.pop();
-                rider.lapsRemaining++;
-                recalcLastLapStart(rider);
-            } else {
-                rider.status = 'waiting';
-                rider.startTime = null;
-                rider.lastLapStart = null;
-                rider.lapsRemaining = totalLaps;
-            }
-        }
-        hideEditMenu(id);
-        renderRiders();
-    }
-
-    function recalcLastLapStart(rider) {
-        const totalPreviousTime = rider.splits.reduce((a, b) => a + b, 0);
-        rider.lastLapStart = rider.startTime + totalPreviousTime;
-    }
-
-    function showEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'flex'; }
-    function hideEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'none'; }
-
-    // --- UI & UPDATES ---
-    function startAutoSchedule() {
-        autoIntervalActive = true;
-        document.getElementById('btn-start-auto').style.display = 'none';
-        document.getElementById('btn-stop-auto').style.display = 'block';
-        document.getElementById('interval-bar').style.display = 'block';
-
-        const nextRider = getNextWaitingRider();
-        if (nextRider) {
-             if (!raceStartTime) startRider(nextRider);
-             else if (!nextAutoStartTime) nextAutoStartTime = Date.now() + (intervalSeconds * 1000);
-        }
-    }
-
-    function stopAutoSchedule() {
-        autoIntervalActive = false;
-        document.getElementById('btn-start-auto').style.display = 'block';
-        document.getElementById('btn-stop-auto').style.display = 'none';
-        document.getElementById('interval-bar').style.display = 'none';
-    }
-
-    function getNextWaitingRider() {
-        return riders.filter(r => r.status === 'waiting')
-                     .sort((a,b) => a.originalIndex - b.originalIndex)[0];
-    }
-
-    function updateUI() {
-        const now = Date.now();
-
-        // 1. Master Clock
-        const clockEl = document.getElementById('master-clock');
-        if (raceStartTime) {
-            const allFinished = riders.length > 0 && riders.every(r => r.status === 'finished');
-            if (allFinished) {
-                let maxFinishTimestamp = 0;
-                riders.forEach(r => {
-                    const finishTime = r.startTime + r.splits.reduce((a,b)=>a+b, 0);
-                    if(finishTime > maxFinishTimestamp) maxFinishTimestamp = finishTime;
-                });
-                clockEl.innerText = formatMinSec(maxFinishTimestamp - raceStartTime);
-                clockEl.classList.add('clock-stopped');
-            } else {
-                clockEl.innerText = formatMinSec(now - raceStartTime);
-                clockEl.classList.remove('clock-stopped');
-            }
-        }
-
-        // 2. Interval Bar
-        if (autoIntervalActive) {
-            if (nextAutoStartTime && now >= nextAutoStartTime) {
-                const next = getNextWaitingRider();
-                if (next) startRider(next);
-                else stopAutoSchedule();
-            }
-            const nextRider = getNextWaitingRider();
-            if (nextRider) {
-                const diff = Math.max(0, nextAutoStartTime - now);
-                document.getElementById('next-rider-name').innerText = `#${nextRider.number}`;
-                document.getElementById('next-countdown').innerText = (diff/1000).toFixed(1) + "s";
-            } else {
-                document.getElementById('interval-bar').innerText = "All riders started";
-            }
-        }
-
-        // 3. Timers
-        riders.forEach(r => {
-            const el = document.getElementById(`timer-${r.id}`);
-            if (!el) return;
-            if (r.status === 'racing') {
-                el.innerText = formatMinSec(now - r.startTime);
-            } else if (r.status === 'finished') {
-                const total = r.splits.reduce((a,b)=>a+b, 0);
-                el.innerText = "Total: " + formatMinSec(total);
-            } else {
-                el.innerText = "Ready";
-            }
-        });
-
-        // 4. Sort (Expected Order)
-        riders.sort((a, b) => {
-            if (a.status === 'racing' && b.status === 'racing') {
-                // Primary Sort: Who started current lap EARLIER? (aka who has been on course longest)
-                return a.lastLapStart - b.lastLapStart; 
-            }
-            const s = { 'racing': 1, 'waiting': 2, 'finished': 3 };
-            if (s[a.status] !== s[b.status]) return s[a.status] - s[b.status];
-            return a.originalIndex - b.originalIndex;
-        });
-        
-        const list = document.getElementById('rider-list');
-        riders.forEach(r => {
-            const card = document.getElementById(`card-${r.id}`);
-            if (card) list.appendChild(card);
-        });
-    }
-
-    function formatMinSec(ms) {
-        if (ms < 0) ms = 0;
-        const totalSec = Math.floor(ms / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        return `${m}:${s.toString().padStart(2,'0')}`;
-    }
-
-    function renderRiders() {
-        const list = document.getElementById('rider-list');
-        list.innerHTML = '';
-        
-        riders.forEach(r => {
-            const div = document.createElement('div');
-            div.id = `card-${r.id}`;
-            div.className = `rider-card state-${r.status}`;
-            
-            // Events
-            div.onmousedown = () => cardDown(r.id);
-            div.ontouchstart = () => cardDown(r.id);
-            div.onmouseup = () => { cardUp(r.id); cardClick(r.id); };
-            div.ontouchend = (e) => { e.preventDefault(); cardUp(r.id); cardClick(r.id); };
-
-            div.innerHTML = `
-                <div class="card-number">${r.number}</div>
-                <div class="card-info">
-                    <div class="card-name">${r.name}</div>
-                    <div class="card-timer" id="timer-${r.id}">Ready</div>
-                </div>
-                <div class="card-laps">
-                    <span class="lap-label">Laps</span>
-                    <span class="lap-val">${r.lapsRemaining}</span>
-                </div>
-                
-                <div id="edit-${r.id}" class="edit-overlay" onclick="event.stopPropagation()">
-                    <button class="edit-btn btn-undo-action" onclick="event.stopPropagation(); undo(${r.id})">Undo Last</button>
-                    <button class="edit-btn btn-cancel-action" onclick="event.stopPropagation(); hideEditMenu(${r.id})">Cancel</button>
-                </div>
-            `;
-            list.appendChild(div);
-        });
-    }
-
-    function exportData() {
-        let out = "Number\tName\t";
-        for(let i=1; i<=totalLaps; i++) out += `Lap ${i}\t`;
-        out += "Total\n";
-        [...riders].sort((a,b)=>a.originalIndex-b.originalIndex).forEach(r => {
-            out += `${r.number}\t${r.name}\t`;
-            let t = 0;
-            r.splits.forEach(s => { out += formatMinSec(s)+"\t"; t+=s; });
-            for(let i=r.splits.length; i<totalLaps; i++) out += "-\t";
-            out += (r.splits.length > 0 ? formatMinSec(t) : "-") + "\n";
-        });
-        navigator.clipboard.writeText(out).then(()=>alert("Copied!"));
-    }
-</script>
-</body>
-</html>
+            justify-content
