@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TT Timer V7 (Global Undo)</title>
+    <title>CycleTT V9 (White Helmets)</title>
     <style>
         :root {
             --orange: #ff9800; 
@@ -59,7 +59,7 @@
         }
         .clock-stopped { color: #ff5252; border-color: #ff5252; }
 
-        /* CONTROLS ROW */
+        /* CONTROLS */
         .controls {
             display: flex;
             gap: 8px;
@@ -82,7 +82,6 @@
         .btn-start-auto { background: var(--green); color: white; }
         .btn-stop-auto { background: var(--red); color: white; display: none; }
         
-        /* UNDO BUTTON */
         .btn-undo {
             background-color: #ff9800;
             color: black;
@@ -110,7 +109,7 @@
             flex-shrink: 0;
         }
 
-        /* SCROLLABLE LIST */
+        /* LIST */
         #rider-list {
             flex: 1; 
             overflow-y: auto; 
@@ -139,20 +138,32 @@
         }
         .rider-card:active { transform: scale(0.98); }
 
+        /* States */
         .state-waiting { background-color: var(--orange); }
         .state-racing { background-color: var(--green); }
         .state-finished { background-color: var(--red); color: white; }
 
+        /* NUMBER BOX (Color Tag) */
         .card-number {
             font-size: 2.8rem;
             font-weight: 900;
             display: flex;
+            flex-direction: column; 
             align-items: center;
             justify-content: center;
-            background: rgba(0,0,0,0.05);
+            background: rgba(0,0,0,0.1); 
             border-right: 1px solid rgba(0,0,0,0.1);
+            position: relative;
+            transition: background 0.2s, color 0.2s;
+        }
+        
+        .helmet-icon {
+            font-size: 0.8rem;
+            opacity: 0.6;
+            margin-top: -5px;
         }
 
+        /* INFO & LAPS */
         .card-info {
             display: flex;
             flex-direction: column;
@@ -257,7 +268,7 @@
 <script>
     // --- STATE ---
     let riders = [];
-    let historyStack = []; // Stores IDs of riders to undo actions
+    let historyStack = [];
     let totalLaps = 3;
     let intervalSeconds = 30;
     
@@ -265,6 +276,22 @@
     let autoIntervalActive = false;
     let nextAutoStartTime = null; 
     let uiTimerId = null;
+
+    // --- HELMET COLORS ---
+    // Includes White and Dark options
+    const HELMET_COLORS = [
+        { hex: 'rgba(0,0,0,0.1)', text: 'inherit' }, // 0: None
+        { hex: '#ffffff', text: '#000000' },         // 1: White
+        { hex: '#ffeb3b', text: '#000000' },         // 2: Yellow
+        { hex: '#29b6f6', text: '#000000' },         // 3: Blue
+        { hex: '#ef5350', text: '#000000' },         // 4: Red
+        { hex: '#f06292', text: '#000000' },         // 5: Pink
+        { hex: '#66bb6a', text: '#000000' },         // 6: Green
+        { hex: '#ab47bc', text: '#ffffff' },         // 7: Purple (White text)
+        { hex: '#ffa726', text: '#000000' },         // 8: Orange
+        { hex: '#000000', text: '#ffffff' },         // 9: Black (White text)
+        { hex: '#1a237e', text: '#ffffff' }          // 10: Navy (White text)
+    ];
 
     function openSetup() { document.getElementById('setup-modal').style.display = 'flex'; }
     function closeSetup() { document.getElementById('setup-modal').style.display = 'none'; }
@@ -295,7 +322,8 @@
                     startTime: null,
                     splits: [],
                     lastLapStart: null,
-                    originalIndex: index
+                    originalIndex: index,
+                    colorIndex: 0
                 });
             }
         });
@@ -315,6 +343,14 @@
         uiTimerId = setInterval(updateUI, 100);
     }
 
+    // --- COLOR TOGGLE ---
+    function cycleColor(id) {
+        const rider = riders.find(r => r.id === id);
+        if (!rider) return;
+        rider.colorIndex = (rider.colorIndex + 1) % HELMET_COLORS.length;
+        renderRiders(); 
+    }
+
     // --- INTERACTION ---
     function cardClick(id) {
         const rider = riders.find(r => r.id === id);
@@ -328,11 +364,8 @@
             recordSplit(rider);
             addToHistory(rider.id);
         }
-        // If finished, no action on click (prevents accidental extra clicks),
-        // but Undo can still revert it.
     }
 
-    // --- HISTORY / UNDO SYSTEM ---
     function addToHistory(riderId) {
         historyStack.push(riderId);
         updateUndoButton();
@@ -347,41 +380,33 @@
     function undoGlobal() {
         if (historyStack.length === 0) return;
 
-        const riderId = historyStack.pop(); // Get last acted-on rider
+        const riderId = historyStack.pop();
         updateUndoButton();
 
         const rider = riders.find(r => r.id === riderId);
         if (!rider) return;
 
-        // REVERSE LOGIC
         if (rider.status === 'finished') {
-            // Undo Finish -> Go back to Racing last lap
             rider.status = 'racing';
             rider.lapsRemaining = 1;
             rider.splits.pop();
             recalcLastLapStart(rider);
         } else if (rider.status === 'racing') {
             if (rider.splits.length > 0) {
-                // Undo Split -> Go back to previous lap
                 rider.splits.pop();
                 rider.lapsRemaining++;
                 recalcLastLapStart(rider);
             } else {
-                // Undo Start -> Go back to Waiting
                 rider.status = 'waiting';
                 rider.startTime = null;
                 rider.lastLapStart = null;
                 rider.lapsRemaining = totalLaps;
             }
         }
-        
-        // Sorting will handle the "return to queue position" automatically
         renderRiders();
     }
 
     function recalcLastLapStart(rider) {
-        // Essential: Keeps the "Old Timer" running correctly
-        // Current Lap Start = StartTime + Sum(Splits)
         const totalPreviousTime = rider.splits.reduce((a, b) => a + b, 0);
         rider.lastLapStart = rider.startTime + totalPreviousTime;
     }
@@ -409,7 +434,7 @@
         renderRiders();
     }
 
-    // --- UI & UPDATES ---
+    // --- UI UPDATES ---
     function startAutoSchedule() {
         autoIntervalActive = true;
         document.getElementById('btn-start-auto').style.display = 'none';
@@ -496,7 +521,7 @@
             }
         });
 
-        // 4. Sort (Expected Order)
+        // 4. Sort
         riders.sort((a, b) => {
             if (a.status === 'racing' && b.status === 'racing') {
                 return a.lastLapStart - b.lastLapStart; 
@@ -529,15 +554,21 @@
             const div = document.createElement('div');
             div.id = `card-${r.id}`;
             div.className = `rider-card state-${r.status}`;
-            div.onclick = () => cardClick(r.id);
+            
+            // Color Logic
+            const colData = HELMET_COLORS[r.colorIndex];
+            const textCol = colData.text === 'inherit' ? 'var(--card-text)' : colData.text;
 
             div.innerHTML = `
-                <div class="card-number">${r.number}</div>
-                <div class="card-info">
+                <div class="card-number" style="background:${colData.hex}; color:${textCol}" onclick="event.stopPropagation(); cycleColor(${r.id})">
+                    ${r.number}
+                    <div class="helmet-icon">⛑</div>
+                </div>
+                <div class="card-info" onclick="cardClick(${r.id})">
                     <div class="card-name">${r.name}</div>
                     <div class="card-timer" id="timer-${r.id}">Ready</div>
                 </div>
-                <div class="card-laps">
+                <div class="card-laps" onclick="cardClick(${r.id})">
                     <span class="lap-label">Laps</span>
                     <span class="lap-val">${r.lapsRemaining}</span>
                 </div>
@@ -547,11 +578,11 @@
     }
 
     function exportData() {
-        let out = "Number\tName\t";
+        let out = "Number\tName\tColorHex\t";
         for(let i=1; i<=totalLaps; i++) out += `Lap ${i}\t`;
         out += "Total\n";
         [...riders].sort((a,b)=>a.originalIndex-b.originalIndex).forEach(r => {
-            out += `${r.number}\t${r.name}\t`;
+            out += `${r.number}\t${r.name}\t${HELMET_COLORS[r.colorIndex].hex}\t`;
             let t = 0;
             r.splits.forEach(s => { out += formatMinSec(s)+"\t"; t+=s; });
             for(let i=r.splits.length; i<totalLaps; i++) out += "-\t";
