@@ -156,4 +156,409 @@
         .card-info {
             display: flex;
             flex-direction: column;
-            justify-content
+            justify-content: center;
+            padding: 0 15px;
+            overflow: hidden;
+        }
+        
+        .card-name {
+            font-size: 1.6rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 2px;
+            line-height: 1.2;
+        }
+
+        .card-timer {
+            font-family: monospace;
+            font-size: 1.2rem;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+
+        .card-laps {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.05);
+            border-left: 1px solid rgba(0,0,0,0.1);
+        }
+        .lap-label { font-size: 0.65rem; text-transform: uppercase; font-weight: bold; opacity: 0.7; }
+        .lap-val { font-size: 2.2rem; font-weight: bold; line-height: 1; }
+
+        /* MODAL */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: white; color: black; padding: 20px;
+            border-radius: 10px; width: 90%; max-width: 400px;
+        }
+        textarea, input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; font-size: 1rem; }
+        .row { display: flex; gap: 10px; }
+        .row button { flex: 1; }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-top">
+        <div style="font-weight:bold; font-size: 1.3rem;">CycleTT</div>
+        <div id="master-clock" class="master-clock">00:00</div>
+    </div>
+    <div class="controls">
+        <button id="btn-undo" class="btn-undo" onclick="undoGlobal()" disabled>↩ Undo</button>
+        <button class="btn-setup" onclick="openSetup()">⚙️ Setup</button>
+        <button id="btn-start-auto" class="btn-start-auto" onclick="startAutoSchedule()" style="display:none">▶ Start Auto</button>
+        <button id="btn-stop-auto" class="btn-stop-auto" onclick="stopAutoSchedule()">⏹ Stop Auto</button>
+        <button class="btn-export" onclick="exportData()">📋 Copy Results</button>
+    </div>
+</header>
+
+<div id="interval-bar">
+    Next: <span id="next-rider-name">...</span> <span id="next-countdown" style="margin-left:10px; color:#fff">00:00</span>
+</div>
+
+<div id="rider-list">
+    <div style="text-align:center; padding-top: 50px; color: #666;">
+        <h3>Ready to Race</h3>
+        <p>Tap "Setup" to add riders.</p>
+    </div>
+</div>
+
+<div id="setup-modal" class="modal">
+    <div class="modal-content">
+        <h2>Race Setup</h2>
+        <label>Riders (Paste: Number Name)</label>
+        <textarea id="input-riders" rows="6" placeholder="101 John Doe&#10;102 Jane Smith"></textarea>
+        
+        <label>Total Laps</label>
+        <input type="number" id="input-laps" value="3">
+
+        <label>Start Interval (Seconds)</label>
+        <input type="number" id="input-interval" value="30">
+
+        <div class="row">
+            <button onclick="closeSetup()" style="background:#ccc">Cancel</button>
+            <button onclick="saveSetup()" style="background:var(--green); color:white">Create Race</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- STATE ---
+    let riders = [];
+    let historyStack = []; // Stores IDs of riders to undo actions
+    let totalLaps = 3;
+    let intervalSeconds = 30;
+    
+    let raceStartTime = null; 
+    let autoIntervalActive = false;
+    let nextAutoStartTime = null; 
+    let uiTimerId = null;
+
+    function openSetup() { document.getElementById('setup-modal').style.display = 'flex'; }
+    function closeSetup() { document.getElementById('setup-modal').style.display = 'none'; }
+
+    function saveSetup() {
+        const text = document.getElementById('input-riders').value;
+        if (!text.trim()) return;
+
+        totalLaps = parseInt(document.getElementById('input-laps').value);
+        intervalSeconds = parseInt(document.getElementById('input-interval').value);
+        
+        riders = [];
+        historyStack = [];
+        updateUndoButton();
+        raceStartTime = null;
+        autoIntervalActive = false;
+        
+        const lines = text.split('\n');
+        lines.forEach((line, index) => {
+            if (line.trim()) {
+                const parts = line.trim().split(/\s+(.*)/);
+                riders.push({
+                    id: Date.now() + index,
+                    number: parts[0] || (index + 1),
+                    name: parts[1] || `Rider ${parts[0]}`,
+                    status: 'waiting',
+                    lapsRemaining: totalLaps,
+                    startTime: null,
+                    splits: [],
+                    lastLapStart: null,
+                    originalIndex: index
+                });
+            }
+        });
+
+        renderRiders();
+        closeSetup();
+        
+        const btn = document.getElementById('btn-start-auto');
+        btn.style.display = 'block';
+        btn.innerText = `▶ Start Auto (${intervalSeconds}s)`;
+        
+        const clock = document.getElementById('master-clock');
+        clock.innerText = "00:00";
+        clock.classList.remove('clock-stopped');
+
+        if(uiTimerId) clearInterval(uiTimerId);
+        uiTimerId = setInterval(updateUI, 100);
+    }
+
+    // --- INTERACTION ---
+    function cardClick(id) {
+        const rider = riders.find(r => r.id === id);
+        if (!rider) return;
+
+        if (rider.status === 'waiting') {
+            startRider(rider);
+            addToHistory(rider.id);
+        }
+        else if (rider.status === 'racing') {
+            recordSplit(rider);
+            addToHistory(rider.id);
+        }
+        // If finished, no action on click (prevents accidental extra clicks),
+        // but Undo can still revert it.
+    }
+
+    // --- HISTORY / UNDO SYSTEM ---
+    function addToHistory(riderId) {
+        historyStack.push(riderId);
+        updateUndoButton();
+    }
+
+    function updateUndoButton() {
+        const btn = document.getElementById('btn-undo');
+        btn.disabled = historyStack.length === 0;
+        btn.innerText = historyStack.length > 0 ? "↩ Undo" : "Undo";
+    }
+
+    function undoGlobal() {
+        if (historyStack.length === 0) return;
+
+        const riderId = historyStack.pop(); // Get last acted-on rider
+        updateUndoButton();
+
+        const rider = riders.find(r => r.id === riderId);
+        if (!rider) return;
+
+        // REVERSE LOGIC
+        if (rider.status === 'finished') {
+            // Undo Finish -> Go back to Racing last lap
+            rider.status = 'racing';
+            rider.lapsRemaining = 1;
+            rider.splits.pop();
+            recalcLastLapStart(rider);
+        } else if (rider.status === 'racing') {
+            if (rider.splits.length > 0) {
+                // Undo Split -> Go back to previous lap
+                rider.splits.pop();
+                rider.lapsRemaining++;
+                recalcLastLapStart(rider);
+            } else {
+                // Undo Start -> Go back to Waiting
+                rider.status = 'waiting';
+                rider.startTime = null;
+                rider.lastLapStart = null;
+                rider.lapsRemaining = totalLaps;
+            }
+        }
+        
+        // Sorting will handle the "return to queue position" automatically
+        renderRiders();
+    }
+
+    function recalcLastLapStart(rider) {
+        // Essential: Keeps the "Old Timer" running correctly
+        // Current Lap Start = StartTime + Sum(Splits)
+        const totalPreviousTime = rider.splits.reduce((a, b) => a + b, 0);
+        rider.lastLapStart = rider.startTime + totalPreviousTime;
+    }
+
+    // --- CORE LOGIC ---
+    function startRider(rider) {
+        const now = Date.now();
+        if (!raceStartTime) raceStartTime = now; 
+        rider.status = 'racing';
+        rider.startTime = now;
+        rider.lastLapStart = now;
+
+        if (autoIntervalActive) {
+            nextAutoStartTime = now + (intervalSeconds * 1000);
+        }
+        renderRiders();
+    }
+
+    function recordSplit(rider) {
+        const now = Date.now();
+        rider.splits.push(now - rider.lastLapStart);
+        rider.lapsRemaining--;
+        rider.lastLapStart = now;
+        if (rider.lapsRemaining <= 0) rider.status = 'finished';
+        renderRiders();
+    }
+
+    // --- UI & UPDATES ---
+    function startAutoSchedule() {
+        autoIntervalActive = true;
+        document.getElementById('btn-start-auto').style.display = 'none';
+        document.getElementById('btn-stop-auto').style.display = 'block';
+        document.getElementById('interval-bar').style.display = 'block';
+
+        const nextRider = getNextWaitingRider();
+        if (nextRider) {
+             if (!raceStartTime) {
+                 startRider(nextRider);
+                 addToHistory(nextRider.id);
+             }
+             else if (!nextAutoStartTime) {
+                 nextAutoStartTime = Date.now() + (intervalSeconds * 1000);
+             }
+        }
+    }
+
+    function stopAutoSchedule() {
+        autoIntervalActive = false;
+        document.getElementById('btn-start-auto').style.display = 'block';
+        document.getElementById('btn-stop-auto').style.display = 'none';
+        document.getElementById('interval-bar').style.display = 'none';
+    }
+
+    function getNextWaitingRider() {
+        return riders.filter(r => r.status === 'waiting')
+                     .sort((a,b) => a.originalIndex - b.originalIndex)[0];
+    }
+
+    function updateUI() {
+        const now = Date.now();
+
+        // 1. Master Clock
+        const clockEl = document.getElementById('master-clock');
+        if (raceStartTime) {
+            const allFinished = riders.length > 0 && riders.every(r => r.status === 'finished');
+            if (allFinished) {
+                let maxFinishTimestamp = 0;
+                riders.forEach(r => {
+                    const finishTime = r.startTime + r.splits.reduce((a,b)=>a+b, 0);
+                    if(finishTime > maxFinishTimestamp) maxFinishTimestamp = finishTime;
+                });
+                clockEl.innerText = formatMinSec(maxFinishTimestamp - raceStartTime);
+                clockEl.classList.add('clock-stopped');
+            } else {
+                clockEl.innerText = formatMinSec(now - raceStartTime);
+                clockEl.classList.remove('clock-stopped');
+            }
+        }
+
+        // 2. Interval Bar
+        if (autoIntervalActive) {
+            if (nextAutoStartTime && now >= nextAutoStartTime) {
+                const next = getNextWaitingRider();
+                if (next) {
+                    startRider(next);
+                    addToHistory(next.id);
+                } else {
+                    stopAutoSchedule();
+                }
+            }
+            const nextRider = getNextWaitingRider();
+            if (nextRider) {
+                const diff = Math.max(0, nextAutoStartTime - now);
+                document.getElementById('next-rider-name').innerText = `#${nextRider.number}`;
+                document.getElementById('next-countdown').innerText = (diff/1000).toFixed(1) + "s";
+            } else {
+                document.getElementById('interval-bar').innerText = "All riders started";
+            }
+        }
+
+        // 3. Timers
+        riders.forEach(r => {
+            const el = document.getElementById(`timer-${r.id}`);
+            if (!el) return;
+            if (r.status === 'racing') {
+                el.innerText = formatMinSec(now - r.startTime);
+            } else if (r.status === 'finished') {
+                const total = r.splits.reduce((a,b)=>a+b, 0);
+                el.innerText = "Total: " + formatMinSec(total);
+            } else {
+                el.innerText = "Ready";
+            }
+        });
+
+        // 4. Sort (Expected Order)
+        riders.sort((a, b) => {
+            if (a.status === 'racing' && b.status === 'racing') {
+                return a.lastLapStart - b.lastLapStart; 
+            }
+            const s = { 'racing': 1, 'waiting': 2, 'finished': 3 };
+            if (s[a.status] !== s[b.status]) return s[a.status] - s[b.status];
+            return a.originalIndex - b.originalIndex;
+        });
+        
+        const list = document.getElementById('rider-list');
+        riders.forEach(r => {
+            const card = document.getElementById(`card-${r.id}`);
+            if (card) list.appendChild(card);
+        });
+    }
+
+    function formatMinSec(ms) {
+        if (ms < 0) ms = 0;
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m}:${s.toString().padStart(2,'0')}`;
+    }
+
+    function renderRiders() {
+        const list = document.getElementById('rider-list');
+        list.innerHTML = '';
+        
+        riders.forEach(r => {
+            const div = document.createElement('div');
+            div.id = `card-${r.id}`;
+            div.className = `rider-card state-${r.status}`;
+            div.onclick = () => cardClick(r.id);
+
+            div.innerHTML = `
+                <div class="card-number">${r.number}</div>
+                <div class="card-info">
+                    <div class="card-name">${r.name}</div>
+                    <div class="card-timer" id="timer-${r.id}">Ready</div>
+                </div>
+                <div class="card-laps">
+                    <span class="lap-label">Laps</span>
+                    <span class="lap-val">${r.lapsRemaining}</span>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    function exportData() {
+        let out = "Number\tName\t";
+        for(let i=1; i<=totalLaps; i++) out += `Lap ${i}\t`;
+        out += "Total\n";
+        [...riders].sort((a,b)=>a.originalIndex-b.originalIndex).forEach(r => {
+            out += `${r.number}\t${r.name}\t`;
+            let t = 0;
+            r.splits.forEach(s => { out += formatMinSec(s)+"\t"; t+=s; });
+            for(let i=r.splits.length; i<totalLaps; i++) out += "-\t";
+            out += (r.splits.length > 0 ? formatMinSec(t) : "-") + "\n";
+        });
+        navigator.clipboard.writeText(out).then(()=>alert("Copied!"));
+    }
+</script>
+</body>
+</html>
