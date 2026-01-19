@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TT Timer V5 (Fixed Undo)</title>
+    <title>TT Timer V6 (Standardized)</title>
     <style>
         :root {
             --orange: #ff9800; 
-            --green: #4caf50; 
-            --red: #f44336; 
-            --dark: #212121;
-            --text-on-dark: #ffffff;
-            --text-on-card: #000000;
+            --green: #43a047; 
+            --red: #e53935; 
+            --dark: #121212;
+            --card-text: #000000;
         }
 
         * { box-sizing: border-box; }
@@ -19,25 +18,25 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--dark);
-            color: var(--text-on-dark);
+            color: white;
             margin: 0;
             padding: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden;
+            overflow: hidden; /* Main body doesn't scroll, only the list does */
         }
 
         /* HEADER */
         header {
-            background-color: #333;
-            padding: 10px 15px;
+            background-color: #1e1e1e;
+            padding: 10px;
             display: flex;
             flex-direction: column;
             gap: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            border-bottom: 1px solid #333;
             z-index: 100;
-            flex-shrink: 0;
+            flex-shrink: 0; /* Header stays fixed size */
         }
 
         .header-top {
@@ -47,80 +46,77 @@
         }
 
         .master-clock {
-            font-family: monospace;
+            font-family: 'Courier New', monospace;
             font-size: 1.8rem;
             font-weight: bold;
-            color: #81d4fa;
+            color: #4fc3f7;
             background: #000;
-            padding: 5px 15px;
-            border-radius: 5px;
-            border: 1px solid #555;
-            min-width: 120px;
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid #333;
+            min-width: 110px;
             text-align: center;
         }
-        
-        .clock-stopped {
-            color: #ff5252;
-            border-color: #ff5252;
-        }
+        .clock-stopped { color: #ff5252; border-color: #ff5252; }
 
-        /* CONTROLS */
         .controls {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             overflow-x: auto;
-            padding-bottom: 5px;
         }
 
         button {
-            padding: 12px 20px;
-            border-radius: 8px;
+            padding: 10px 16px;
+            border-radius: 6px;
             border: none;
             font-weight: bold;
-            font-size: 1rem;
+            font-size: 0.95rem;
             cursor: pointer;
             white-space: nowrap;
         }
 
-        .btn-setup { background-color: #90caf9; color: #000; }
-        .btn-export { background-color: #ce93d8; color: #000; }
-        .btn-start-auto { background-color: var(--green); color: white; }
-        .btn-stop-auto { background-color: var(--red); color: white; display: none; }
+        .btn-setup { background: #90caf9; color: #000; }
+        .btn-export { background: #ce93d8; color: #000; }
+        .btn-start-auto { background: var(--green); color: white; }
+        .btn-stop-auto { background: var(--red); color: white; display: none; }
 
-        /* AUTO START BAR */
+        /* NEXT RIDER BAR */
         #interval-bar {
-            background-color: #000;
+            background: #000;
             color: var(--orange);
             text-align: center;
-            padding: 12px;
-            font-size: 1.3rem;
+            padding: 8px;
+            font-size: 1.1rem;
             font-weight: bold;
-            border-bottom: 2px solid #555;
+            border-bottom: 1px solid #333;
             display: none;
             flex-shrink: 0;
         }
 
-        /* RIDER LIST */
+        /* RIDER LIST - SCROLLABLE AREA */
         #rider-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
+            flex: 1; /* Takes remaining height */
+            overflow-y: auto; /* SCROLLS */
+            -webkit-overflow-scrolling: touch;
+            padding: 10px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
-            padding-bottom: 80px;
+            gap: 10px;
+            padding-bottom: 60px;
         }
 
-        /* RIDER CARD */
+        /* CARD DESIGN (FIXED HEIGHT) */
         .rider-card {
             display: grid;
-            grid-template-columns: 80px 1fr 70px; 
-            height: 120px;
-            border-radius: 12px;
-            color: var(--text-on-card);
+            grid-template-columns: 80px 1fr 70px; /* Number | Name/Time | Laps */
+            height: 110px; /* FIXED HEIGHT - NO SQUASHING */
+            min-height: 110px; 
+            flex-shrink: 0; /* Prevents flexbox from squishing it */
+            border-radius: 8px;
+            color: var(--card-text);
             position: relative;
             overflow: hidden;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
             transition: transform 0.1s;
         }
         .rider-card:active { transform: scale(0.98); }
@@ -128,52 +124,84 @@
         .state-waiting { background-color: var(--orange); }
         .state-racing { background-color: var(--green); }
         .state-finished { background-color: var(--red); color: white; }
-        
+
+        /* 1. Left: Number */
         .card-number {
-            font-size: 2.5rem;
+            font-size: 2.8rem;
             font-weight: 900;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(0,0,0,0.1);
-            border-right: 1px solid rgba(0,0,0,0.15);
+            background: rgba(0,0,0,0.05);
+            border-right: 1px solid rgba(0,0,0,0.1);
         }
 
+        /* 2. Middle: Name & Timer */
         .card-info {
             display: flex;
             flex-direction: column;
-            justify-content: space-evenly; 
-            padding: 5px 15px;
+            justify-content: center; /* Center vertically */
+            padding: 0 15px;
+            overflow: hidden;
         }
         
         .card-name {
-            font-size: 1.3rem;
-            font-weight: 600;
+            font-size: 1.6rem; /* LARGER NAME */
+            font-weight: 700;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            margin-bottom: 2px;
+            line-height: 1.2;
         }
 
         .card-timer {
             font-family: monospace;
-            font-size: 2.2rem;
-            font-weight: 800;
-            letter-spacing: -1px;
+            font-size: 1.2rem; /* SMALLER TIMER */
+            font-weight: 600;
+            opacity: 0.9;
         }
 
+        /* 3. Right: Laps */
         .card-laps {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: rgba(0,0,0,0.1);
-            font-weight: bold;
-            border-left: 1px solid rgba(0,0,0,0.15);
+            background: rgba(0,0,0,0.05);
+            border-left: 1px solid rgba(0,0,0,0.1);
         }
-        .lap-label { font-size: 0.75rem; text-transform: uppercase; opacity: 0.8; }
-        .lap-val { font-size: 2.2rem; line-height: 1; }
+        .lap-label { font-size: 0.65rem; text-transform: uppercase; font-weight: bold; opacity: 0.7; }
+        .lap-val { font-size: 2.2rem; font-weight: bold; line-height: 1; }
 
-        /* MODALS */
+        /* EDIT / UNDO OVERLAY */
+        .edit-overlay {
+            position: absolute; 
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; /* SOLID BACKGROUND for visibility */
+            display: none;
+            flex-direction: row; /* Buttons side by side */
+            justify-content: space-evenly;
+            align-items: center;
+            z-index: 999; /* High Z-Index */
+            padding: 10px;
+        }
+        
+        .edit-btn {
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1rem;
+            color: white;
+            border: 1px solid #444;
+            flex: 1;
+            margin: 0 5px;
+            text-align: center;
+        }
+        .btn-undo-action { background: var(--orange); color: black; }
+        .btn-cancel-action { background: #333; }
+
+        /* MODAL */
         .modal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9);
@@ -186,22 +214,9 @@
             background: white; color: black; padding: 20px;
             border-radius: 10px; width: 90%; max-width: 400px;
         }
-        textarea, input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; font-size: 1rem; }
+        textarea, input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; font-size: 1rem; }
         .row { display: flex; gap: 10px; }
         .row button { flex: 1; }
-
-        /* EDIT OVERLAY */
-        .edit-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95);
-            display: none;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            z-index: 50;
-        }
-        .edit-overlay h3 { margin: 0; color: white; font-size: 1.5rem; }
 
     </style>
 </head>
@@ -209,7 +224,7 @@
 
 <header>
     <div class="header-top">
-        <div style="font-weight:bold; font-size: 1.4rem;">CycleTT</div>
+        <div style="font-weight:bold; font-size: 1.3rem;">CycleTT</div>
         <div id="master-clock" class="master-clock">00:00</div>
     </div>
     <div class="controls">
@@ -225,8 +240,8 @@
 </div>
 
 <div id="rider-list">
-    <div style="text-align:center; padding: 60px; color: #888;">
-        <h2>Ready to Race</h2>
+    <div style="text-align:center; padding-top: 50px; color: #666;">
+        <h3>Ready to Race</h3>
         <p>Tap "Setup" to add riders.</p>
     </div>
 </div>
@@ -308,12 +323,13 @@
         uiTimerId = setInterval(updateUI, 100);
     }
 
+    // --- INTERACTION ---
     let pressTimer;
     function cardDown(id) { pressTimer = setTimeout(() => showEditMenu(id), 600); }
     function cardUp(id) { clearTimeout(pressTimer); }
     
     function cardClick(id) {
-        // Safe check: if edit menu is visible, do not process click
+        // Guard: If edit menu is visible, ignore click
         if (document.getElementById(`edit-${id}`).style.display === 'flex') return;
         
         const rider = riders.find(r => r.id === id);
@@ -323,6 +339,7 @@
         else if (rider.status === 'racing') recordSplit(rider);
     }
 
+    // --- CORE LOGIC ---
     function startRider(rider) {
         const now = Date.now();
         if (!raceStartTime) raceStartTime = now; 
@@ -345,38 +362,32 @@
         renderRiders();
     }
 
-    // --- UNDO LOGIC (FIXED) ---
     function undo(id) {
         const rider = riders.find(x => x.id === id);
         
         if (rider.status === 'finished') {
-            // Revert finish to racing
             rider.status = 'racing';
             rider.lapsRemaining = 1;
-            rider.splits.pop(); // remove final split
-            recalcLastLapStart(rider); // Reset timer anchor
+            rider.splits.pop();
+            recalcLastLapStart(rider);
         } 
         else if (rider.status === 'racing') {
             if (rider.splits.length > 0) {
-                // Revert a lap
                 rider.splits.pop();
                 rider.lapsRemaining++;
-                recalcLastLapStart(rider); // Reset timer anchor
+                recalcLastLapStart(rider);
             } else {
-                // Revert start
                 rider.status = 'waiting';
                 rider.startTime = null;
                 rider.lastLapStart = null;
                 rider.lapsRemaining = totalLaps;
             }
         }
-        
         hideEditMenu(id);
         renderRiders();
     }
 
     function recalcLastLapStart(rider) {
-        // Logic: The "start" of the current lap is the Rider Start Time + sum of all previous splits
         const totalPreviousTime = rider.splits.reduce((a, b) => a + b, 0);
         rider.lastLapStart = rider.startTime + totalPreviousTime;
     }
@@ -384,8 +395,7 @@
     function showEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'flex'; }
     function hideEditMenu(id) { document.getElementById(`edit-${id}`).style.display = 'none'; }
 
-    // --- AUTO & UI ---
-
+    // --- UI & UPDATES ---
     function startAutoSchedule() {
         autoIntervalActive = true;
         document.getElementById('btn-start-auto').style.display = 'none';
@@ -414,7 +424,7 @@
     function updateUI() {
         const now = Date.now();
 
-        // Master Clock
+        // 1. Master Clock
         const clockEl = document.getElementById('master-clock');
         if (raceStartTime) {
             const allFinished = riders.length > 0 && riders.every(r => r.status === 'finished');
@@ -432,7 +442,7 @@
             }
         }
 
-        // Auto Start
+        // 2. Interval Bar
         if (autoIntervalActive) {
             if (nextAutoStartTime && now >= nextAutoStartTime) {
                 const next = getNextWaitingRider();
@@ -449,7 +459,7 @@
             }
         }
 
-        // Timers
+        // 3. Timers
         riders.forEach(r => {
             const el = document.getElementById(`timer-${r.id}`);
             if (!el) return;
@@ -457,15 +467,18 @@
                 el.innerText = formatMinSec(now - r.startTime);
             } else if (r.status === 'finished') {
                 const total = r.splits.reduce((a,b)=>a+b, 0);
-                el.innerText = formatMinSec(total);
+                el.innerText = "Total: " + formatMinSec(total);
             } else {
-                el.innerText = "00:00";
+                el.innerText = "Ready";
             }
         });
 
-        // Sorting
+        // 4. Sort (Expected Order)
         riders.sort((a, b) => {
-            if (a.status === 'racing' && b.status === 'racing') return a.lastLapStart - b.lastLapStart; 
+            if (a.status === 'racing' && b.status === 'racing') {
+                // Primary Sort: Who started current lap EARLIER? (aka who has been on course longest)
+                return a.lastLapStart - b.lastLapStart; 
+            }
             const s = { 'racing': 1, 'waiting': 2, 'finished': 3 };
             if (s[a.status] !== s[b.status]) return s[a.status] - s[b.status];
             return a.originalIndex - b.originalIndex;
@@ -479,7 +492,7 @@
     }
 
     function formatMinSec(ms) {
-        if (ms < 0) ms = 0; // Prevent negative display on undo flicker
+        if (ms < 0) ms = 0;
         const totalSec = Math.floor(ms / 1000);
         const m = Math.floor(totalSec / 60);
         const s = totalSec % 60;
@@ -494,6 +507,8 @@
             const div = document.createElement('div');
             div.id = `card-${r.id}`;
             div.className = `rider-card state-${r.status}`;
+            
+            // Events
             div.onmousedown = () => cardDown(r.id);
             div.ontouchstart = () => cardDown(r.id);
             div.onmouseup = () => { cardUp(r.id); cardClick(r.id); };
@@ -503,16 +518,16 @@
                 <div class="card-number">${r.number}</div>
                 <div class="card-info">
                     <div class="card-name">${r.name}</div>
-                    <div class="card-timer" id="timer-${r.id}">00:00</div>
+                    <div class="card-timer" id="timer-${r.id}">Ready</div>
                 </div>
                 <div class="card-laps">
                     <span class="lap-label">Laps</span>
                     <span class="lap-val">${r.lapsRemaining}</span>
                 </div>
+                
                 <div id="edit-${r.id}" class="edit-overlay" onclick="event.stopPropagation()">
-                    <h3>#${r.number}</h3>
-                    <button style="background:var(--orange); color:black" onclick="event.stopPropagation(); undo(${r.id})">↩ Undo Last</button>
-                    <button style="background:#ccc" onclick="event.stopPropagation(); hideEditMenu(${r.id})">Cancel</button>
+                    <button class="edit-btn btn-undo-action" onclick="event.stopPropagation(); undo(${r.id})">Undo Last</button>
+                    <button class="edit-btn btn-cancel-action" onclick="event.stopPropagation(); hideEditMenu(${r.id})">Cancel</button>
                 </div>
             `;
             list.appendChild(div);
